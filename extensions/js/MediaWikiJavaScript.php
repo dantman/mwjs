@@ -44,15 +44,44 @@ class MediaWikiJavaScript {
 		if(!$this->mIO)
 			$this->open();
 		
-		$jsonMessage = self::jsonStringify(array('action' => 'exec', 'code' => $jscode));
-		if ( strpos($jsonMessage, "\0\0") )
+		if ( strpos($jscode, "\0\0") )
 			return "Illegal delimiter sequence detected, potentially malicious user input, aborting";
-		fwrite( $this->mPipe[0], "$jsonMessage\0\0" );
-		$json = stream_get_line( $this->mPipe[1], $wgJSMaxRead, "\0\0");
-		$msg = self::jsonParse( $json );
-		if ( $msg ) {
-			return $msg['output'];
+		fwrite( $this->mPipe[0], "exec\0$jscode\0\0" );
+		while($msg = $this->readMessage()) {
+			switch($msg[0]) {
+			case 'output':
+				return $msg[1];
+			default:
+				wfVarDump($msg);
+				return "Unknown message returned";
+			}
 		}
+		return "Timed out or could not read message";
+	}
+	
+	private $mBuffer = "";
+	private function readMessage() {
+		global $wgJSMaxTime;
+		for(;;) {
+			$p = strpos($this->mBuffer, "\0\0");
+			if( $p !== false )
+				break;
+			if( feof($this->mPipe[1]) )
+				die("...");//return false;
+			$read = array($this->mPipe[1]);
+			$write = null;
+			$except = null;
+			$numChangedStreams = stream_select($read, $write, $except, $this->mEnd-time());
+			if ( $numChangedStreams > 0 )
+				$this->mBuffer .= fread($this->mPipe[1], 512);
+			else
+				return false;
+			if ( time() >= $this->mEnd )
+				return false;
+		}
+		$msgData = substr($this->mBuffer, 0, $p);
+		$this->mBuffer = substr($this->mBuffer, $p+2);
+		return explode("\0", $msgData);
 	}
 	
 	function clearState( &$parser ) {
@@ -60,24 +89,33 @@ class MediaWikiJavaScript {
 	}
 	
 	function open() {
-		// ToDo: Longrunning sockets
-		global $wgJavaHome, $wgRhinoExternalJar;
+		// ToDo: Socket server connections
+		global $wgJavaHome, $wgRhinoExternalJar, $wgMWJSExternalJar;
 		$JAVA = "java";
 		if( $wgJavaHome )
 			$JAVA = "$wgJavaHome/$JAVA";
 		
 		$this->mPipe = array();
 		// we have to use Xbootclasspath due to a bug where Rhino bundled with OpenJDK clobers the jar we specify which may be newer
+		//die("$JAVA -Xbootclasspath/p:\"$wgRhinoExternalJar\" -jar \"$wgMWJSExternalJar\" -");
 		$this->mIO = proc_open("$JAVA -Xbootclasspath/p:\"$wgRhinoExternalJar\" -jar \"$wgMWJSExternalJar\" -", array(
 			array( 'pipe', 'w' ),
 			array( 'pipe', 'r' ),
 			array( 'pipe', 'r' ) // ToDo: Should we redirect stderr to file right here?
-		), $this->mPipe);
+		), $this->mPipe, null, null);
+		stream_set_blocking($this->mPipe[0], 0);
+		stream_set_blocking($this->mPipe[1], 0);
+		stream_set_blocking($this->mPipe[2], 0);
+		stream_set_write_buffer($this->mPipe[0], 0);
+		stream_set_write_buffer($this->mPipe[1], 0);
+		stream_set_write_buffer($this->mPipe[2], 0);
 		
 	}
 	
 	function reset() {
-		
+		global $wgJSMaxTime;
+		$this->mTime = time();
+		$this->mEnd = $this->mTime + $wgJSMaxTime;
 	}
 	
 	function close() {

@@ -27,7 +27,7 @@ import java.io.*;
 
 public class MediaWikiJavaScript {
 	
-	public static void main(String args[]) {
+	public static void main(String args[]) throws UnsupportedEncodingException {
 		if ( args.length <= 0 ) {
 			System.out.println("...");
 			System.exit(1);

@@ -24,12 +24,13 @@
 package org.mediawiki.extensions.js;
 import org.mozilla.javascript.*;
 import java.io.*;
+import java.util.Arrays;
 
 public class ContextInstance implements Runnable {
 	
 	protected Reader in;
-	protected PrintWriter out;
-	protected PrintWriter err;
+	protected PrintStream out;
+	protected PrintStream err;
 	
 	public ContextInstance(Reader in, PrintStream out, PrintStream err) {
 		this.in = in;
@@ -41,14 +42,78 @@ public class ContextInstance implements Runnable {
 		Global global = new Global();
 		try {
 			Context cx = Context.enter();
+			//cx.setLanguageVersion(Context.VERSION_);
+			global.init(cx);
+			quickRunScript( cx, global, "json2.js" );
+			writeMessage(new String[] {"output", "foo"});
+			try {
+				while (true) {
+					String[] message = readMessage();
+					if ( message == null )
+						return; // abort
+					String action = message[0];
+					if ( action.equals("close") ) {
+						return; // abort = close
+					} if( action.equals("exec") ) {
+						// Simply exec a chunk of code
+						String code = message[1];
+						
+						writeMessage(new String[] { "output", "test" });
+					} if ( action.equals("eval") ) {
+						// Evaluate and return output from a chunk of code
+					} else {
+						// Unknown message
+						return; // abort
+					}
+				}
+			} catch( IOException e ) { return; } // abort
 			
 		} finally {
 			Context.exit();
 		}
 	}
 	
+	private String[] readMessage() throws IOException {
+		String[] message = null;
+		char[] chars = new char[256];
+		int off = 0;
+		for(;;++off) {
+			if ( off == chars.length )
+				chars = Arrays.copyOf(chars, chars.length + 256);
+			int l = this.in.read(chars, off, 1);
+			if ( l != 1 )
+				throw new IOException();
+			if ( chars[off] == '\0' ) {
+				if ( off == 0 ) {
+					// null char following a null char, finish message
+					break;
+				} else {
+					String part = new String(chars, 0, off-1);
+					if ( message == null ) {
+						message = new String[] { part };
+					} else {
+						message = Arrays.copyOf(message, message.length+1);
+						message[message.length-1] = part;
+					}
+					chars = new char[256];
+					off = 0;
+				}
+			}
+		}
+		return message;
+	}
+	
+	private void writeMessage(String[] message) {
+		for(int i=0; i!=message.length; ++i) {
+			this.out.print(message[i]);
+			this.out.print('\0');
+		}
+		this.out.print('\0');
+		this.out.flush();
+	}
+	
 	/* Run a script embedded into the jar */
-	protected Object quickRunScript( Context cs, ScriptableObject scope, Script fileName ) {
+	protected Object quickRunScript( Context cx, ScriptableObject scope, String fileName ) {
 		try {
 			InputStream is = ContextInstance.class.getResourceAsStream( fileName );
 			BufferedReader in = new BufferedReader(new InputStreamReader(is, "UTF-8"));

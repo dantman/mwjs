@@ -1,0 +1,5 @@
+Main-Class: org.mediawiki.extensions.js.MediaWikiJavaScript
+Implementation-Title: MediaWiki JavaScript Engine
+Implementation-Vendor: Daniel Friesen
+Implementation-URL: http://mediawiki.org/wiki/Extension:JS
+

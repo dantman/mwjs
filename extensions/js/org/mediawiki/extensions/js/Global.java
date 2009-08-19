@@ -24,8 +24,26 @@
 package org.mediawiki.extensions.js;
 import org.mozilla.javascript.*;
 
-public class Global {
+public class Global extends ScriptableObject {
 	
+	public Global() {}
+	public Global(Context cx) { init(cx); }
+	public void init(ContextFactory factory) {
+		factory.call(new ContextAction() {
+			public Object run(Context cx) {
+				init(cx);
+				return null;
+			}
+		});
+	}
 	
+	public void init(Context cx) {
+		boolean sealed = cx.isSealed();
+		cx.initStandardObjects(this, sealed);
+	}
+	
+	public String getClassName() {
+		return "Global";
+	}
 	
 }
